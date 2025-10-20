@@ -1,0 +1,62 @@
+name: list-s3-bucket
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mainline
+
+permissions:
+  id-token: write  # required for OIDC
+  contents: read   # allow actions/checkout if added later
+
+jobs:
+  list-bucket:
+    # Use your self-hosted runner labeled 'my-runner1'. Ensure the runner has awscli and jq.
+    runs-on: [self-hosted, my-runner1]
+    env:
+      AWS_REGION: us-east-1  # Assumed default; change if bucket lives elsewhere
+      S3_BUCKET: kuldips17-test
+    steps:
+      - name: Preflight environment check
+        run: |
+          echo "Runner: $(uname -a)"
+          command -v aws || echo "aws CLI missing (install before running)"
+          command -v jq || echo "jq not found (optional)"
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::485235461001:role/kuldips17-repo-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify caller identity
+        run: aws sts get-caller-identity
+
+      - name: List top-level objects
+        run: aws s3 ls s3://$S3_BUCKET/
+
+      - name: List all objects (recursive)
+        run: aws s3 ls s3://$S3_BUCKET/ --recursive | head -n 200
+
+      - name: Optional JSON inventory (first 100 keys)
+        run: |
+          aws s3api list-objects-v2 --bucket "$S3_BUCKET" --max-items 100 \
+            --query '{KeyCount:KeyCount,Keys:Contents[].Key}' > bucket_sample.json
+          cat bucket_sample.json
+
+      - name: Fail if bucket empty
+        run: |
+          COUNT=$(aws s3api list-objects-v2 --bucket "$S3_BUCKET" --max-items 1 --query 'KeyCount' --output text)
+          if [ "$COUNT" = "0" ]; then echo "Bucket is empty"; exit 1; fi
+
+    # Concurrency guard (optional) to avoid overlapping listings
+    concurrency:
+      group: list-s3-${{ github.ref }}
+      cancel-in-progress: false
+
+# Notes:
+# - Ensure the role trust policy includes condition:
+#   StringLike: { "token.actions.githubusercontent.com:sub": "repo:glcp/auto-activate-sm-workflows:ref:refs/heads/mainline" }
+#   Adjust if you trigger from other branches or tags.
+# - Update AWS_REGION if the bucket resides in a different region.
+# - Remove the 'Fail if bucket empty' step if empty buckets are acceptable.
