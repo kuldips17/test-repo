@@ -13,7 +13,7 @@ permissions:
 jobs:
   list-bucket:
     # Use your self-hosted runner labeled 'my-runner1'. Ensure the runner has awscli and jq.
-    runs-on: [self-hosted, my-runner1]
+    runs-on: my-runner1
     env:
       AWS_REGION: us-east-1  # Assumed default; change if bucket lives elsewhere
       S3_BUCKET: kuldips17-test
